@@ -1,0 +1,94 @@
+name: Build iPhone IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/ios-build.yml'
+      - 'ios/**'
+      - 'lib/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      COCOAPODS_DISABLE_STATS: 'true'
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.8'
+          channel: stable
+          cache: true
+
+      - name: Check build tools
+        run: |
+          set -euo pipefail
+          flutter --version
+          xcodebuild -version
+          pod --version
+          ruby -c ios/Podfile
+          plutil -lint ios/Runner/Info.plist
+
+      - name: Install Dart packages
+        run: flutter pub get --enforce-lockfile
+
+      - name: Install iOS dependencies
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          pod install --repo-update 2>&1 | tee "$RUNNER_TEMP/course-helper-pods.log"
+
+      - name: Compile for iPhone without signing
+        run: |
+          set -euo pipefail
+          flutter build ios --release --no-codesign --build-number "$GITHUB_RUN_NUMBER" 2>&1 | tee "$RUNNER_TEMP/course-helper-ios.log"
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          test -d build/ios/iphoneos/Runner.app
+          test -f build/ios/iphoneos/Runner.app/Runner
+          mkdir -p build/ios/unsigned/Payload
+          ditto build/ios/iphoneos/Runner.app build/ios/unsigned/Payload/Runner.app
+          cd build/ios/unsigned
+          /usr/bin/zip -qry CourseHelper-iPhone-unsigned.ipa Payload
+          /usr/bin/unzip -tq CourseHelper-iPhone-unsigned.ipa
+          shasum -a 256 CourseHelper-iPhone-unsigned.ipa > SHA256SUMS.txt
+          printf '%s\n' 'Unsigned IPA: sign with your own Apple account before installing on an iPhone.' > INSTALL.txt
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: CourseHelper-iPhone-unsigned
+          path: |
+            build/ios/unsigned/CourseHelper-iPhone-unsigned.ipa
+            build/ios/unsigned/SHA256SUMS.txt
+            build/ios/unsigned/INSTALL.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iPhone-build-logs
+          path: |
+            ${{ runner.temp }}/course-helper-pods.log
+            ${{ runner.temp }}/course-helper-ios.log
+          if-no-files-found: ignore
+          retention-days: 7

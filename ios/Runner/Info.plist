@@ -53,6 +53,8 @@
 	<string>需要使用相机来扫描二维码</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>需要访问相册以保存 PPT 图片</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>需要访问相册以选择课程相关图片和二维码图片</string>
 	<key>io.flutter.embedded_views_preview</key>
 	<true/>
 	<key>BAIDU_MAP_AK</key>
